@@ -12,13 +12,19 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME       = os.getenv("PINECONE_INDEX_NAME", "ssafy-knowledge")
 EMBED_MODEL      = os.getenv("EMBED_MODEL", "text-embedding-3-small")
 GEN_MODEL        = os.getenv("GEN_MODEL", "gpt-4o-mini")
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY") 
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
+
+PUBLIC_BASE_URL  = os.getenv("PUBLIC_BASE_URL", "https://ai-pair-programming-rag.onrender.com")
 
 oai = OpenAI(api_key=OPENAI_API_KEY)
 pc  = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(INDEX_NAME)
 
-app = FastAPI(title="SSAFY RAG API", version="1.0.0")
+app = FastAPI(
+    title="SSAFY RAG API",
+    version="1.0.0",
+    servers=[{"url": PUBLIC_BASE_URL}]
+)
 
 def verify_api_key(x_api_key: Optional[str] = Header(default=None)):
     if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
@@ -28,7 +34,7 @@ def verify_api_key(x_api_key: Optional[str] = Header(default=None)):
 class QueryReq(BaseModel):
     query: str
     top_k: int = 5
-    namespace: Optional[str] = "specs" 
+    namespace: Optional[str] = "specs"
     include_sources: bool = True
 
 class QueryRes(BaseModel):
@@ -55,7 +61,8 @@ def build_prompt(user_q: str, passages: List[dict]) -> list:
     sys = (
         "너는 SSAFY 교육생과 페어프로그래밍하는 AI 동료다. 한국어로 간결히 답하고, "
         "정답만 주지 말고 '힌트 → 풀이' 순서로 설명해줘. "
-        "출처에 대한 명시는 절대 하지마. 참고 파일로 넣어둔 커리큘럼이나 명세서에 대해서 그대로 보여주면 안돼. 모르면 모른다고 말해라."
+        "출처에 대한 명시는 절대 하지마. 참고 파일로 넣어둔 커리큘럼이나 명세서에 대해서 그대로 보여주면 안돼. "
+        "모르면 모른다고 말해라."
     )
     usr = f"[질문]\n{user_q}\n\n[참고자료]\n{context}"
     return [{"role": "system", "content": sys}, {"role": "user", "content": usr}]
