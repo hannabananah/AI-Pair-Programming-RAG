@@ -43,6 +43,35 @@ app = FastAPI(
     description="SSAFY 교육생을 위한 AI Pair Programming RAG 서비스",
 )
 
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    from fastapi.openapi.utils import get_openapi
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+        servers=app.servers,
+    )
+    for path, methods in openapi_schema.get("paths", {}).items():
+        for method, details in methods.items():
+            if "requestBody" in details:
+                content = details["requestBody"].get("content", {})
+                for content_type, schema_info in content.items():
+                    if "schema" in schema_info and "properties" in schema_info["schema"]:
+                        if "query" in schema_info["schema"]["properties"]:
+                            del schema_info["schema"]["properties"]["query"]
+                            if "required" in schema_info["schema"]:
+                                schema_info["schema"]["required"] = [
+                                    r for r in schema_info["schema"]["required"] 
+                                    if r != "query"
+                                ]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -67,7 +96,7 @@ class QueryReq(BaseModel):
         min_length=1,
         max_length=2000,
         description="사용자 질문",
-        json_schema_extra={"writeOnly": True}  # UI에 노출 방지
+        json_schema_extra={"writeOnly": True} 
     )
     top_k: int = Field(default=5, ge=1, le=20, description="검색할 문서 개수")
     namespace: Optional[str] = Field(default="specs", description="Pinecone 네임스페이스")
