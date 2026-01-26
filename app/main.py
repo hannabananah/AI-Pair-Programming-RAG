@@ -54,19 +54,48 @@ def custom_openapi():
         routes=app.routes,
         servers=app.servers,
     )
+    
+    # components/schemas에서 query 필드 제거
+    schemas = openapi_schema.get("components", {}).get("schemas", {})
+    for schema_name, schema_def in schemas.items():
+        if isinstance(schema_def, dict) and "properties" in schema_def:
+            if "query" in schema_def["properties"]:
+                del schema_def["properties"]["query"]
+                if "required" in schema_def:
+                    schema_def["required"] = [
+                        r for r in schema_def["required"] 
+                        if r != "query"
+                    ]
+    
+    # paths에서 query 필드 제거
     for path, methods in openapi_schema.get("paths", {}).items():
         for method, details in methods.items():
             if "requestBody" in details:
                 content = details["requestBody"].get("content", {})
                 for content_type, schema_info in content.items():
-                    if "schema" in schema_info and "properties" in schema_info["schema"]:
-                        if "query" in schema_info["schema"]["properties"]:
-                            del schema_info["schema"]["properties"]["query"]
-                            if "required" in schema_info["schema"]:
-                                schema_info["schema"]["required"] = [
-                                    r for r in schema_info["schema"]["required"] 
-                                    if r != "query"
-                                ]
+                    if "schema" in schema_info:
+                        # $ref가 있는 경우 처리
+                        if "$ref" in schema_info["schema"]:
+                            ref_path = schema_info["schema"]["$ref"].replace("#/components/schemas/", "")
+                            if ref_path in schemas:
+                                schema_def = schemas[ref_path]
+                                if "properties" in schema_def and "query" in schema_def["properties"]:
+                                    del schema_def["properties"]["query"]
+                                    if "required" in schema_def:
+                                        schema_def["required"] = [
+                                            r for r in schema_def["required"] 
+                                            if r != "query"
+                                        ]
+                        # 직접 properties가 있는 경우
+                        elif "properties" in schema_info["schema"]:
+                            if "query" in schema_info["schema"]["properties"]:
+                                del schema_info["schema"]["properties"]["query"]
+                                if "required" in schema_info["schema"]:
+                                    schema_info["schema"]["required"] = [
+                                        r for r in schema_info["schema"]["required"] 
+                                        if r != "query"
+                                    ]
+    
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
@@ -96,7 +125,6 @@ class QueryReq(BaseModel):
         min_length=1,
         max_length=2000,
         description="사용자 질문",
-        json_schema_extra={"writeOnly": True} 
     )
     top_k: int = Field(default=5, ge=1, le=20, description="검색할 문서 개수")
     namespace: Optional[str] = Field(default="specs", description="Pinecone 네임스페이스")
@@ -107,6 +135,15 @@ class QueryReq(BaseModel):
         if not v or not v.strip():
             raise ValueError("query는 비어있을 수 없습니다.")
         return v.strip()
+    
+    class Config:
+        @staticmethod
+        def schema_extra(schema, model):
+            # 스키마에서 query 필드 완전히 제거
+            if "properties" in schema and "query" in schema["properties"]:
+                del schema["properties"]["query"]
+            if "required" in schema and "query" in schema.get("required", []):
+                schema["required"] = [r for r in schema["required"] if r != "query"]
 
 class SourceInfo(BaseModel):
     index: int = Field(..., description="소스 순번")
